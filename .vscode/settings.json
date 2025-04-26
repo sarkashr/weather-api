@@ -1,0 +1,16 @@
+{
+  "terminal.integrated.profiles.linux": {
+    "nvm-bash": {
+      "path": "bash",
+      "args": [
+        "-c",
+        "if [ -f $HOME/.nvm/nvm.sh ]; then source $HOME/.nvm/nvm.sh && nvm use 22 2>/dev/null || true; fi && bash"
+      ],
+      "icon": "terminal-bash"
+    }
+  },
+  "terminal.integrated.defaultProfile.linux": "nvm-bash",
+  "editor.formatOnPaste": true,
+  "editor.formatOnSave": true,
+  "editor.formatOnType": true
+}
