@@ -5,6 +5,7 @@ import { Cache } from 'cache-manager';
 import axios, { AxiosError } from 'axios';
 import * as CircuitBreaker from 'opossum';
 import { AxiosRequestConfig } from 'axios';
+import { retryWithExponentialBackoff } from './retry.utils';
 
 import { CurrentWeatherResponse } from './interfaces/current-weather.interface';
 import { DaySummaryResponse } from './interfaces/day-summary.interface';
@@ -57,12 +58,20 @@ export class WeatherService {
     this.logger.log(`Cache miss for ${cityName}`);
     cacheMissCounter.inc();
     try {
-      // Use circuit breaker to wrap the API call
-      const response = await this.breaker.fire({
-        method: 'get',
-        url: `${this.baseUrl}/weather`,
-        params: { q: cityName, appid: this.apiKey, units: 'metric' },
-      });
+      // Use retry with exponential backoff and circuit breaker for the API call
+      const maxRetries = this.configService.get<number>('API_MAX_RETRIES') ?? 3;
+      const response = await retryWithExponentialBackoff(
+        () =>
+          this.breaker.fire({
+            method: 'get',
+            url: `${this.baseUrl}/weather`,
+            params: { q: cityName, appid: this.apiKey, units: 'metric' },
+          }),
+        maxRetries,
+        500,
+        2,
+        this.logger,
+      );
       const data = response.data as CurrentWeatherResponse;
       // cache the new data
       const ttl = this.configService.get<number>('CACHE_TTL_SECONDS')!;
@@ -104,15 +113,23 @@ export class WeatherService {
    */
   async getCoordinatesForCity(cityName: string): Promise<{ lat: number; lon: number }> {
     try {
-      // Circuit breaker to wrap the API call
-      const response = await this.breaker.fire({
-        method: 'get',
-        url: `${this.baseUrl}/weather`,
-        params: {
-          q: cityName,
-          appid: this.apiKey,
-        },
-      });
+      // Use retry with exponential backoff and circuit breaker for the API call
+      const maxRetries = this.configService.get<number>('API_MAX_RETRIES') ?? 3;
+      const response = await retryWithExponentialBackoff(
+        () =>
+          this.breaker.fire({
+            method: 'get',
+            url: `${this.baseUrl}/weather`,
+            params: {
+              q: cityName,
+              appid: this.apiKey,
+            },
+          }),
+        maxRetries,
+        500,
+        2,
+        this.logger,
+      );
       const weatherData = response.data as CurrentWeatherResponse;
 
       if (!weatherData?.coord?.lat || !weatherData?.coord?.lon) {
@@ -150,21 +167,28 @@ export class WeatherService {
       // Get coordinates for the city
       const coords = await this.getCoordinatesForCity(city.name);
 
-      // Fetch data for each day in parallel
+      // Fetch data for each day in parallel with retry and backoff
+      const maxRetries = this.configService.get<number>('API_MAX_RETRIES') ?? 3;
       const responses = await Promise.all(
         dates.map((date) =>
-          this.breaker
-            .fire({
-              method: 'get',
-              url: `${this.oneCallBaseUrl}/day_summary`,
-              params: {
-                lat: coords.lat,
-                lon: coords.lon,
-                date,
-                units: 'metric',
-                appid: this.apiKey,
-              },
-            })
+          retryWithExponentialBackoff(
+            () =>
+              this.breaker.fire({
+                method: 'get',
+                url: `${this.oneCallBaseUrl}/day_summary`,
+                params: {
+                  lat: coords.lat,
+                  lon: coords.lon,
+                  date,
+                  units: 'metric',
+                  appid: this.apiKey,
+                },
+              }),
+            maxRetries,
+            500,
+            2,
+            this.logger,
+          )
             .then((response): DaySummaryResponse | null => {
               if (response && response.data) {
                 return response.data as DaySummaryResponse;
