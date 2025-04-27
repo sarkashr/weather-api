@@ -9,6 +9,7 @@ import { DaySummaryResponse } from './interfaces/day-summary.interface';
 import { Last7DaysWeatherResponse } from './interfaces/last-7-days-weather.interface';
 import { SimplifiedDayWeather } from './interfaces/simplified-day-weather.interface';
 import { City } from 'generated/prisma';
+import { cacheHitCounter, cacheMissCounter } from '../metrics';
 
 @Injectable()
 export class WeatherService {
@@ -41,9 +42,11 @@ export class WeatherService {
     const cached = await this.cacheManager.get<CurrentWeatherResponse>(cacheKey);
     if (cached) {
       this.logger.log(`Cache hit for ${cityName}`);
+      cacheHitCounter.inc();
       return cached;
     }
     this.logger.log(`Cache miss for ${cityName}`);
+    cacheMissCounter.inc();
     try {
       const response = await axios.get<CurrentWeatherResponse>(`${this.baseUrl}/weather`, {
         params: { q: cityName, appid: this.apiKey, units: 'metric' },
