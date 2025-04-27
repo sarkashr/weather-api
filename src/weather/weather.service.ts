@@ -3,6 +3,8 @@ import { ConfigService } from '@nestjs/config';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { Cache } from 'cache-manager';
 import axios, { AxiosError } from 'axios';
+import * as CircuitBreaker from 'opossum';
+import { AxiosRequestConfig } from 'axios';
 
 import { CurrentWeatherResponse } from './interfaces/current-weather.interface';
 import { DaySummaryResponse } from './interfaces/day-summary.interface';
@@ -17,6 +19,13 @@ export class WeatherService {
   private readonly apiKey: string;
   private readonly baseUrl = 'https://api.openweathermap.org/data/2.5';
   private readonly oneCallBaseUrl = 'https://api.openweathermap.org/data/3.0/onecall';
+
+  // Opossum circuit breaker for all axios API calls
+  private readonly breaker = new CircuitBreaker((config: AxiosRequestConfig) => axios(config), {
+    timeout: 5000, // 5 seconds
+    errorThresholdPercentage: 50, // Open if 50% fail
+    resetTimeout: 10000, // Try again after 10 seconds
+  });
 
   constructor(
     private readonly configService: ConfigService,
@@ -48,10 +57,13 @@ export class WeatherService {
     this.logger.log(`Cache miss for ${cityName}`);
     cacheMissCounter.inc();
     try {
-      const response = await axios.get<CurrentWeatherResponse>(`${this.baseUrl}/weather`, {
+      // Use circuit breaker to wrap the API call
+      const response = await this.breaker.fire({
+        method: 'get',
+        url: `${this.baseUrl}/weather`,
         params: { q: cityName, appid: this.apiKey, units: 'metric' },
       });
-      const data = response.data;
+      const data = response.data as CurrentWeatherResponse;
       // cache the new data
       const ttl = this.configService.get<number>('CACHE_TTL_SECONDS')!;
       await this.cacheManager.set(cacheKey, data, ttl);
@@ -92,13 +104,15 @@ export class WeatherService {
    */
   async getCoordinatesForCity(cityName: string): Promise<{ lat: number; lon: number }> {
     try {
-      const response = await axios.get(`${this.baseUrl}/weather`, {
+      // Circuit breaker to wrap the API call
+      const response = await this.breaker.fire({
+        method: 'get',
+        url: `${this.baseUrl}/weather`,
         params: {
           q: cityName,
           appid: this.apiKey,
         },
       });
-
       const weatherData = response.data as CurrentWeatherResponse;
 
       if (!weatherData?.coord?.lat || !weatherData?.coord?.lon) {
@@ -139,8 +153,10 @@ export class WeatherService {
       // Fetch data for each day in parallel
       const responses = await Promise.all(
         dates.map((date) =>
-          axios
-            .get<DaySummaryResponse>(`${this.oneCallBaseUrl}/day_summary`, {
+          this.breaker
+            .fire({
+              method: 'get',
+              url: `${this.oneCallBaseUrl}/day_summary`,
               params: {
                 lat: coords.lat,
                 lon: coords.lon,
@@ -148,6 +164,12 @@ export class WeatherService {
                 units: 'metric',
                 appid: this.apiKey,
               },
+            })
+            .then((response): DaySummaryResponse | null => {
+              if (response && response.data) {
+                return response.data as DaySummaryResponse;
+              }
+              return null;
             })
             .catch(() => {
               this.logger.warn(`Failed to fetch weather for date ${date}`);
@@ -164,21 +186,20 @@ export class WeatherService {
       };
 
       // Process responses and add to result
-      responses.forEach((response) => {
-        if (response && response.data) {
-          // Create a SimplifiedDayWeather object with only the requested fields
+      responses.forEach((data) => {
+        if (data) {
           const simplifiedData: SimplifiedDayWeather = {
-            date: response.data.date,
-            units: response.data.units,
+            date: data.date,
+            units: data.units,
             temperature: {
-              min: response.data.temperature.min,
-              max: response.data.temperature.max,
+              min: data.temperature.min,
+              max: data.temperature.max,
             },
             humidity: {
-              afternoon: response.data.humidity.afternoon,
+              afternoon: data.humidity.afternoon,
             },
             pressure: {
-              afternoon: response.data.pressure.afternoon,
+              afternoon: data.pressure.afternoon,
             },
           };
           result.dailyData.push(simplifiedData);
