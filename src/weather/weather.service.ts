@@ -1,5 +1,7 @@
-import { Injectable, Logger, HttpException } from '@nestjs/common';
+import { Injectable, Logger, HttpException, Inject } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import { Cache } from 'cache-manager';
 import axios, { AxiosError } from 'axios';
 
 import { CurrentWeatherResponse } from './interfaces/current-weather.interface';
@@ -15,7 +17,10 @@ export class WeatherService {
   private readonly baseUrl = 'https://api.openweathermap.org/data/2.5';
   private readonly oneCallBaseUrl = 'https://api.openweathermap.org/data/3.0/onecall';
 
-  constructor(private readonly configService: ConfigService) {
+  constructor(
+    private readonly configService: ConfigService,
+    @Inject(CACHE_MANAGER) private readonly cacheManager: Cache,
+  ) {
     // Get API key from environment variables with fallback to empty string
     const apiKey = this.configService.get<string>('OPENWEATHER_API_KEY');
     this.apiKey = apiKey || '';
@@ -31,16 +36,23 @@ export class WeatherService {
    * Get current weather for a city
    */
   async getCurrentWeather(cityName: string): Promise<CurrentWeatherResponse> {
+    // attempt cache lookup
+    const cacheKey = `weather:${cityName.toLowerCase()}`;
+    const cached = await this.cacheManager.get<CurrentWeatherResponse>(cacheKey);
+    if (cached) {
+      this.logger.log(`Cache hit for ${cityName}`);
+      return cached;
+    }
+    this.logger.log(`Cache miss for ${cityName}`);
     try {
       const response = await axios.get<CurrentWeatherResponse>(`${this.baseUrl}/weather`, {
-        params: {
-          q: cityName,
-          appid: this.apiKey,
-          units: 'metric', // Use metric units by default
-        },
+        params: { q: cityName, appid: this.apiKey, units: 'metric' },
       });
-
-      return response.data;
+      const data = response.data;
+      // cache the new data
+      const ttl = this.configService.get<number>('CACHE_TTL_SECONDS')!;
+      await this.cacheManager.set(cacheKey, data, ttl);
+      return data;
     } catch (error) {
       const axiosError = error as AxiosError;
 
