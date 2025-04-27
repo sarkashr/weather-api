@@ -1,8 +1,10 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit, Inject } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
 import { WeatherService } from '../weather/weather.service';
 import { Prisma } from '../../generated/prisma';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import { Cache } from 'cache-manager';
 
 @Injectable()
 export class TasksService implements OnModuleInit {
@@ -11,6 +13,7 @@ export class TasksService implements OnModuleInit {
   constructor(
     private readonly prisma: PrismaService,
     private readonly weatherService: WeatherService,
+    @Inject(CACHE_MANAGER) private readonly cacheManager: Cache,
   ) {}
 
   /**
@@ -79,6 +82,10 @@ export class TasksService implements OnModuleInit {
               },
             },
           });
+
+          // invalidate cache for updated city
+          const cacheKey = `weather:${city.name.toLowerCase()}`;
+          await this.cacheManager.del(cacheKey);
 
           this.logger.log(`Updated weather data for city: ${city.name} (ID: ${city.id})`);
         } catch (error: unknown) {
