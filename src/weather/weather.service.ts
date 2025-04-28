@@ -100,11 +100,73 @@ export class WeatherService {
       // Handle other errors
       const errorMsg = axiosError.message || 'Unknown error';
       this.logger.error(`Failed to fetch weather for ${cityName}: ${errorMsg}`);
-      throw new HttpException(
-        `Failed to get weather for ${cityName}: ${errorMsg}`,
-        axiosError.response?.status || 500,
+
+      // Fallback 1: Try to return stale cache if available
+      const stale = await this.cacheManager.get<CurrentWeatherResponse>(cacheKey);
+      if (stale) {
+        this.logger.warn(`Returning stale cache for ${cityName} due to API failure.`);
+        return stale;
+      }
+
+      // Fallback 2: Return static default response
+      this.logger.warn(
+        `Returning static default weather for ${cityName} due to API and cache failure.`,
       );
+      return this.getDefaultWeatherResponse(cityName);
     }
+  }
+
+  /**
+   * Returns a static default weather response for fallback purposes
+   */
+  private getDefaultWeatherResponse(cityName: string): CurrentWeatherResponse {
+    return {
+      coord: { lon: 0, lat: 0 },
+      weather: [
+        { id: 0, main: 'Unavailable', description: 'Weather data unavailable', icon: '01d' },
+      ],
+      base: 'default',
+      main: {
+        temp: 0,
+        feels_like: 0,
+        temp_min: 0,
+        temp_max: 0,
+        pressure: 0,
+        humidity: 0,
+      },
+      visibility: 0,
+      wind: { speed: 0, deg: 0 },
+      clouds: { all: 0 },
+      dt: Math.floor(Date.now() / 1000),
+      sys: { country: 'N/A', sunrise: 0, sunset: 0 },
+      timezone: 0,
+      id: 0,
+      name: cityName,
+      cod: 503, // Service unavailable
+    };
+  }
+
+  /**
+   * Returns a static default last 7 days weather response for fallback purposes
+   */
+  private getDefaultLast7DaysWeatherResponse(city: City): Last7DaysWeatherResponse {
+    const today = new Date();
+    const dailyData = Array.from({ length: 7 }, (_, i) => {
+      const date = new Date(today);
+      date.setDate(today.getDate() - i);
+      return {
+        date: date.toISOString().split('T')[0]!,
+        units: 'metric',
+        temperature: { min: 0, max: 0 },
+        humidity: { afternoon: 0 },
+        pressure: { afternoon: 0 },
+      };
+    });
+    return {
+      id: city.id,
+      name: city.name,
+      dailyData,
+    };
   }
 
   /**
@@ -236,10 +298,20 @@ export class WeatherService {
       const errorMsg = axiosError.message || 'Unknown error';
 
       this.logger.error(`Failed to fetch weekly weather summary: ${errorMsg}`);
-      throw new HttpException(
-        `Failed to get weekly weather summary: ${errorMsg}`,
-        axiosError.response?.status || 500,
+
+      // Fallback 1: Try to return stale cache if available
+      const cacheKey = `weather:last7days:${city.name.toLowerCase()}`;
+      const stale = await this.cacheManager.get<Last7DaysWeatherResponse>(cacheKey);
+      if (stale) {
+        this.logger.warn(`Returning stale last 7 days cache for ${city.name} due to API failure.`);
+        return stale;
+      }
+
+      // Fallback 2: Return static default response
+      this.logger.warn(
+        `Returning static default last 7 days weather for ${city.name} due to API and cache failure.`,
       );
+      return this.getDefaultLast7DaysWeatherResponse(city);
     }
   }
 }
