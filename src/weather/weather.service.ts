@@ -232,36 +232,35 @@ export class WeatherService {
       // Fetch data for each day in parallel with retry and backoff
       const maxRetries = this.configService.get<number>('API_MAX_RETRIES') ?? 3;
       const responses = await Promise.all(
-        dates.map((date) =>
-          retryWithExponentialBackoff(
-            () =>
-              this.breaker.fire({
-                method: 'get',
-                url: `${this.oneCallBaseUrl}/day_summary`,
-                params: {
-                  lat: coords.lat,
-                  lon: coords.lon,
-                  date,
-                  units: 'metric',
-                  appid: this.apiKey,
-                },
-              }),
-            maxRetries,
-            500,
-            2,
-            this.logger,
-          )
-            .then((response): DaySummaryResponse | null => {
-              if (response && response.data) {
-                return response.data as DaySummaryResponse;
-              }
-              return null;
-            })
-            .catch(() => {
-              this.logger.warn(`Failed to fetch weather for date ${date}`);
-              return null; // Return null for failed requests
-            }),
-        ),
+        dates.map(async (date) => {
+          try {
+            const response = await retryWithExponentialBackoff(
+              () =>
+                this.breaker.fire({
+                  method: 'get',
+                  url: `${this.oneCallBaseUrl}/day_summary`,
+                  params: {
+                    lat: coords.lat,
+                    lon: coords.lon,
+                    date,
+                    units: 'metric',
+                    appid: this.apiKey,
+                  },
+                }),
+              maxRetries,
+              500,
+              2,
+              this.logger,
+            );
+            if (response && response.data) {
+              return response.data as DaySummaryResponse;
+            }
+            return null;
+          } catch {
+            this.logger.warn(`Failed to fetch weather for date ${date}`);
+            return null; // Return null for failed requests
+          }
+        }),
       );
 
       // Build a response that combines 7 days of historical data
