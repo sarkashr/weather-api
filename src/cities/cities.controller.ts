@@ -2,6 +2,7 @@ import { Controller, Get, Post, Body, Param, Delete } from '@nestjs/common';
 import { CitiesService } from './cities.service';
 import { City } from '../../generated/prisma';
 import { CreateCityDto } from './dto/create-city.dto';
+import { UnifiedDaySummary } from '../weather/interfaces';
 
 @Controller('cities')
 export class CitiesController {
@@ -9,7 +10,7 @@ export class CitiesController {
 
   @Post()
   create(@Body() createCityDto: CreateCityDto): Promise<City> {
-    return this.citiesService.create(createCityDto.name);
+    return this.citiesService.create(createCityDto);
   }
 
   @Get()
@@ -31,7 +32,7 @@ export class CitiesController {
   }
 
   @Get(':name/weather')
-  findOneWithWeather(@Param('name') name: string): Promise<City | null> {
+  findOneWithWeather(@Param('name') name: string): Promise<UnifiedDaySummary[]> {
     return this.citiesService.findOneWithLast7DaysWeather(name);
   }
 }

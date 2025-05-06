@@ -1,9 +1,10 @@
 import { Injectable, ConflictException, NotFoundException, Logger } from '@nestjs/common';
 
-import { PrismaService } from '../prisma/prisma.service';
+import { PrismaService } from '../prisma';
 import { Prisma, City } from '../../generated/prisma';
-import { WeatherService } from '../weather/weather.service';
-import { Last7DaysWeatherResponse } from 'src/weather/interfaces/last-7-days-weather.interface';
+import { WeatherService } from '../weather';
+import { CreateCityDto } from './dto/create-city.dto';
+import { UnifiedDaySummary } from 'src/weather/interfaces';
 
 @Injectable()
 export class CitiesService {
@@ -13,27 +14,30 @@ export class CitiesService {
     private readonly weatherService: WeatherService,
   ) {}
 
-  async create(name: string): Promise<City> {
+  async create(createCityDto: CreateCityDto): Promise<City> {
     const existingCity = await this.prisma.city.findUnique({
-      where: { name },
+      where: { name: createCityDto.name },
     });
     if (existingCity) {
       throw new ConflictException('City already exists');
     }
 
     // getCurrentWeather will throw HttpException if city not found
-    const weatherData = await this.weatherService.getCurrentWeather(name);
+    const weatherData = await this.weatherService.getCurrentWeather({
+      name: createCityDto.name,
+      id: 0,
+    });
 
     // If we got here, we have valid weather data
     return this.prisma.city.create({
       data: {
-        id: weatherData.id, // Use OpenWeatherMap's city ID
-        name,
+        id: weatherData.location_id || 0, // Use OpenWeatherMap's city ID
+        name: createCityDto.name,
         weatherData: {
           create: {
-            temp: weatherData.main.temp,
-            feels_like: weatherData.main.feels_like,
-            humidity: weatherData.main.humidity,
+            temp: weatherData.temp,
+            feels_like: weatherData.feels_like,
+            humidity: weatherData.humidity,
             mainData: JSON.parse(JSON.stringify(weatherData)) as Prisma.InputJsonValue, // Convert to plain object for Prisma
           },
         },
@@ -87,7 +91,7 @@ export class CitiesService {
     });
   }
 
-  async findOneWithLast7DaysWeather(name: string): Promise<Last7DaysWeatherResponse> {
+  async findOneWithLast7DaysWeather(name: string): Promise<UnifiedDaySummary[]> {
     try {
       // First check if the city exists in our database
       let city = await this.prisma.city.findUnique({ where: { name } });
@@ -96,8 +100,8 @@ export class CitiesService {
       // getCurrentWeather() and pass it as parameter to getLast7DaysWeather()
       if (!city) {
         // getCurrentWeather will throw HttpException if city not found
-        const weatherData = await this.weatherService.getCurrentWeather(name);
-        city = { id: weatherData.id, name };
+        const weatherData = await this.weatherService.getCurrentWeather({ name, id: 0 });
+        city = { name, id: weatherData.location_id || 0 };
       }
 
       return await this.weatherService.getLast7DaysWeather(city);

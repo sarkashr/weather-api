@@ -4,9 +4,10 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
 import { redisStore } from 'cache-manager-redis-store';
 
-import { CitiesModule } from './cities/cities.module';
-import { WeatherModule } from './weather/weather.module';
-import { TasksModule } from './tasks/tasks.module';
+import { CitiesModule } from './cities';
+import { WeatherModule } from './weather';
+import { TasksModule } from './tasks';
+import { MonitoringModule } from './monitoring';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { TasksModule } from './tasks/tasks.module';
     CitiesModule,
     WeatherModule,
     TasksModule,
+    MonitoringModule,
   ],
 })
 export class AppModule {}

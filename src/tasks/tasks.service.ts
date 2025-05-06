@@ -65,7 +65,7 @@ export class TasksService implements OnModuleInit {
       for (const city of cities) {
         try {
           // Get fresh weather data
-          const weatherData = await this.weatherService.getCurrentWeather(city.name);
+          const weatherData = await this.weatherService.getCurrentWeather(city);
 
           // Update weather data for the city
           await this.prisma.city.update({
@@ -74,9 +74,9 @@ export class TasksService implements OnModuleInit {
               weatherData: {
                 delete: true, // Delete any existing record
                 create: {
-                  temp: weatherData.main.temp,
-                  feels_like: weatherData.main.feels_like,
-                  humidity: weatherData.main.humidity,
+                  temp: weatherData.temp,
+                  feels_like: weatherData.feels_like,
+                  humidity: weatherData.humidity,
                   mainData: JSON.parse(JSON.stringify(weatherData)) as Prisma.InputJsonValue,
                 },
               },

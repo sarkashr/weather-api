@@ -20,6 +20,23 @@ This project is built with:
 - API documentation with Swagger
 - Docker and Docker Compose support for easy deployment
 
+### Caching Layer
+
+- **Redis-powered Caching**: Implementation of Redis for high-performance, in-memory caching of weather data, reducing external API calls and improving response times
+- **TTL-based Cache Management**: Weather data is cached with configurable time-to-live settings based on data volatility (e.g., current weather vs. historical data)
+- **Smart Invalidation Strategy**: Automatic cache invalidation when fresh weather data is received from scheduled updates, ensuring data accuracy while maintaining performance
+- **Comprehensive Cache Analytics**: Real-time monitoring of cache hit/miss ratios, latency improvements, and storage utilization to continuously optimize caching policies
+
+### Advanced Error Handling & Resilience
+
+- **Circuit Breaker Implementation**: Integration of the circuit breaker pattern that automatically detects OpenWeatherMap API failures and prevents cascading system failures
+- **Intelligent Retry Strategy**: Configurable retry mechanism with exponential backoff and jitter to gracefully handle transient network or API issues
+- **Multi-tiered Fallback System**:
+  - Primary: Attempt to retrieve from cache
+  - Secondary: Fallback to alternative weather providers when primary source is unavailable
+  - Tertiary: Return last known good data with appropriate staleness indicators
+- **Comprehensive Error Telemetry**: Structured error logging with contextual information, error classification, and integration with monitoring systems for proactive issue detection
+
 ## Database Structure
 
 The application uses two main models:
@@ -95,6 +112,11 @@ npx prisma migrate dev
 npm run start:dev
 ```
 
+```bash
+# Run in development mode with database and redis
+npm run start:db+dev
+```
+
 ### Production Mode
 
 ```bash
@@ -156,6 +178,20 @@ http://localhost:3000/api
 ```
 
 ## Weather Data Integration
+
+### Provider Architecture
+
+The application features a comprehensive and flexible weather provider switching system based on SOLID principles:
+
+- **Modular Provider Design**: Abstract base class architecture allows for seamless provider switching
+- **Configuration-driven Selection**: Weather providers can be switched through simple configuration changes without code modification
+- **Currently Supported Providers**:
+  - OpenWeatherMap API v2.5
+  - OpenWeatherMap API v3.0 (with enhanced data features)
+- **Common Provider Base**: Shared functionality across providers to minimize code duplication
+- **Standardized Units System**: Consistent units handling (metric, imperial, standard) across all providers
+
+### API Integration
 
 The application uses the following OpenWeatherMap APIs:
 
